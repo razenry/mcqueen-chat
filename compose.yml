@@ -1,0 +1,56 @@
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mcqueen-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - mcqueen-network
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: mcqueen-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mcqueen
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: mcqueen_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U mcqueen -d mcqueen_db
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mcqueen-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: mcqueen-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - mcqueen-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  mcqueen-network:
+    driver: bridge

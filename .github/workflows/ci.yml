@@ -1,0 +1,68 @@
+name: McQueen AI CI
+
+on:
+  push:
+    branches:
+      - "**"
+
+  pull_request:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Go Application
+
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.26.11"
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Display Go version
+        run: go version
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Check Go formatting
+        run: |
+          files=$(git ls-files '*.go')
+          unformatted=$(gofmt -l $files)
+
+          if [ -n "$unformatted" ]; then
+            echo "The following files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+          echo "All Go files are formatted."
+
+      - name: Run Go vet
+        run: go vet ./...
+
+      - name: Run tests with race detector
+        run: go test -race ./...
+
+      - name: Build application
+        run: go build ./...

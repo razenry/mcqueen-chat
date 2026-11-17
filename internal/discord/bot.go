@@ -5,25 +5,39 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 
-	"github.com/razenry/mcqueen-ai/internal/ai"
+	mcqueenagent "github.com/razenry/mcqueen-ai/internal/agent"
 	"github.com/razenry/mcqueen-ai/internal/conversation"
+	usermemory "github.com/razenry/mcqueen-ai/internal/memory"
 )
 
 type Bot struct {
-	session      *discordgo.Session
-	provider     ai.Provider
-	memory       *conversation.Manager
-	systemPrompt string
+	session    *discordgo.Session
+	agent      *mcqueenagent.Agent
+	memory     *conversation.Manager
+	userMemory *usermemory.Service
 }
 
 func New(
 	token string,
-	provider ai.Provider,
-	systemPrompt string,
+	aiAgent *mcqueenagent.Agent,
+	memory *conversation.Manager,
+	userMemory *usermemory.Service,
 ) (*Bot, error) {
+	if aiAgent == nil {
+		return nil, fmt.Errorf("AI agent cannot be nil")
+	}
+
+	if memory == nil {
+		return nil, fmt.Errorf("conversation manager cannot be nil")
+	}
+
+	if userMemory == nil {
+		return nil, fmt.Errorf("user memory service cannot be nil")
+	}
+
 	session, err := discordgo.New("Bot " + token)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create Discord session: %w", err)
 	}
 
 	session.Identify.Intents =
@@ -33,10 +47,10 @@ func New(
 			discordgo.IntentsMessageContent
 
 	bot := &Bot{
-		session:      session,
-		provider:     provider,
-		memory:       conversation.NewManager(6),
-		systemPrompt: systemPrompt,
+		session:    session,
+		agent:      aiAgent,
+		memory:     memory,
+		userMemory: userMemory,
 	}
 
 	bot.registerHandlers()

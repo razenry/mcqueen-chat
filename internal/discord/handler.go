@@ -296,6 +296,7 @@ func (b *Bot) handleConversation(
 	memoryContext, err := b.userMemory.GetContext(
 		ctx,
 		message.Author.ID,
+		input,
 	)
 	if err != nil {
 		// Memory bersifat tambahan. Kegagalannya tidak menghentikan chat.

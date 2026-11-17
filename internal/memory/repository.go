@@ -37,7 +37,6 @@ func NewRepository(db *pgxpool.Pool) (*Repository, error) {
 	return &Repository{db: db}, nil
 }
 
-// ListActive mengambil memori aktif milik satu Discord user.
 func (r *Repository) ListActive(
 	ctx context.Context,
 	userID string,
@@ -70,7 +69,88 @@ func (r *Repository) ListActive(
 	}
 	defer rows.Close()
 
-	memories := make([]Memory, 0, limit)
+	return scanMemories(rows, limit)
+}
+
+// SearchRelevant mencari memori berdasarkan kemiripan kata dengan query.
+func (r *Repository) SearchRelevant(
+	ctx context.Context,
+	userID string,
+	query string,
+	limit int,
+) ([]Memory, error) {
+	if strings.TrimSpace(userID) == "" {
+		return nil, fmt.Errorf("user ID is required")
+	}
+
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return r.ListActive(ctx, userID, limit)
+	}
+
+	// Batasi query agar pencarian tidak menerima teks yang terlalu panjang.
+	runes := []rune(query)
+	if len(runes) > 500 {
+		query = string(runes[:500])
+	}
+
+	if limit <= 0 || limit > 20 {
+		limit = 5
+	}
+
+	rows, err := r.db.Query(ctx, `
+		WITH search_query AS (
+			SELECT websearch_to_tsquery('simple', $2) AS terms
+		),
+		matched_memories AS (
+			SELECT
+				m.id,
+				m.category,
+				m.content,
+				m.importance,
+				m.created_at,
+				m.updated_at,
+				ts_rank_cd(
+					to_tsvector(
+						'simple',
+						m.category || ' ' || m.content
+					),
+					q.terms
+				) AS relevance
+			FROM memories AS m
+			CROSS JOIN search_query AS q
+			WHERE m.discord_user_id = $1
+			  AND m.is_active = TRUE
+			  AND q.terms <> ''::tsquery
+			  AND to_tsvector(
+					'simple',
+					m.category || ' ' || m.content
+			  ) @@ q.terms
+		)
+		SELECT
+			id,
+			category,
+			content,
+			importance,
+			created_at,
+			updated_at
+		FROM matched_memories
+		ORDER BY relevance DESC, importance DESC, updated_at DESC
+		LIMIT $3
+	`, userID, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("search relevant memories: %w", err)
+	}
+	defer rows.Close()
+
+	return scanMemories(rows, limit)
+}
+
+func scanMemories(
+	rows pgx.Rows,
+	capacity int,
+) ([]Memory, error) {
+	memories := make([]Memory, 0, capacity)
 
 	for rows.Next() {
 		var item Memory
@@ -96,7 +176,6 @@ func (r *Repository) ListActive(
 	return memories, nil
 }
 
-// Save menyimpan memori baru atau memperbarui memori aktif yang sama.
 func (r *Repository) Save(
 	ctx context.Context,
 	userID string,
@@ -178,7 +257,6 @@ func (r *Repository) Save(
 	return nil
 }
 
-// Deactivate menonaktifkan memori berdasarkan ID dan pemiliknya.
 func (r *Repository) Deactivate(
 	ctx context.Context,
 	userID string,
